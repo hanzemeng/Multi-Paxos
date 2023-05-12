@@ -5,6 +5,8 @@ from os import _exit
 from sys import stdout
 from time import sleep
 
+condtion_lock = threading.Condition()
+
 DELAY_TIME = 0.01
 
 PROCESS_ID = -1
@@ -12,13 +14,14 @@ PROCESS_PORT = -1
 SERVER_IP = socket.gethostbyname('localhost')
 SERVER_PORT = 9000
 sockets = 6 * [None] # 0 is for server; rest are for other nodes
+link_work = 6 * [False] # 0 is for server; rest are for other nodes
 
 
 def get_user_input():
 	while True:
 		user_input = input()
 		parameters = user_input.split()
-		if 0 == len(parameters) or "exit" == parameters[0]:
+		if 0 == len(parameters) or "crash" == parameters[0]:
 			for sock in sockets:
 				if None != sock:
 					sock.close()
@@ -28,11 +31,20 @@ def get_user_input():
 			sleep(int(parameters[1]))
 		elif "hi" == parameters[0]: # say hi to all clients, for debugging
 			for i in range(1, 6):
-				if PROCESS_ID != i and None != sockets[i]:
+				if PROCESS_ID != i and None != sockets[i] and True == link_work[i]:
 					try:
 						sockets[i].sendall(bytes(f"Hello from P{PROCESS_ID}", "utf-8"))
 					except:
 						print(f"can't send hi to {i}\n")
+		elif "fail" == parameters[0]:
+			condtion_lock.acquire()
+			link_work[int(parameters[1])] = False
+			condtion_lock.release()
+		elif "fix" == parameters[0]:
+			condtion_lock.acquire()
+			link_work[int(parameters[1])] = True
+			condtion_lock.release()
+
 
 def handle_message_from(id, data): #id is the id that current process receives from
 	print(f"{data}")
@@ -47,6 +59,9 @@ def handle_message_from(id, data): #id is the id that current process receives f
 		threading.Thread(target=listen_message_from, args=[int(parameters[1])]).start() # listen to message from the target client
 
 def listen_message_from(id):
+	condtion_lock.acquire()
+	link_work[id] = True
+	condtion_lock.release()
 	while True:
 		try:
 			data = sockets[id].recv(4096)
@@ -56,6 +71,9 @@ def listen_message_from(id):
 			sockets[id].close()
 			break
 		
+		if False == link_work[id]:
+			continue;
+
 		data = data.decode()
 		data = data.split("\n") # to prevent recving mutiple messgaes, the last element is always ""
 		for line in data:
