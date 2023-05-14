@@ -61,7 +61,10 @@ def handle_msg(data, conn, addr):
 
 		for sock in client_sockets: # tell existing clients to connect to the new client
 			if None != sock:
-				sock[0].sendall(bytes(f"connect {parameters[1]} {parameters[2]}\n", "utf-8"))
+				try:
+					sock[0].sendall(bytes(f"connect {parameters[1]} {parameters[2]}\n", "utf-8"))
+				except:
+					continue
 
 		for i in range(5): # tell the new client to connect to existing clients
 			if None != client_sockets[i]:

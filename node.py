@@ -53,10 +53,13 @@ def handle_message_from(id, data): #id is the id that current process receives f
 	if "connect" == parameters[0]:
 		if int(parameters[1]) >= PROCESS_ID: # only connect to client with smaller id
 			return
-		sockets[int(parameters[1])] = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		sockets[int(parameters[1])].connect((SERVER_IP, int(parameters[2])))
-		sockets[int(parameters[1])].sendall(bytes(f"init {PROCESS_ID}\n", "utf-8"))
-		threading.Thread(target=listen_message_from, args=[int(parameters[1])]).start() # listen to message from the target client
+		try:
+			sockets[int(parameters[1])] = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+			sockets[int(parameters[1])].connect((SERVER_IP, int(parameters[2])))
+			sockets[int(parameters[1])].sendall(bytes(f"init {PROCESS_ID}\n", "utf-8"))
+			threading.Thread(target=listen_message_from, args=[int(parameters[1])]).start() # listen to message from the target client
+		except:
+			pass
 
 def listen_message_from(id):
 	condtion_lock.acquire()
