@@ -35,17 +35,14 @@ def get_user_input():
 			blockchain.print()
 
 def respond(conn, addr):
-	#print(f"accepted connection from port {addr[1]}", flush=True)
-
 	while True: # handle message sent from a client
 		try:
 			data = conn.recv(1024)
 		except:
-			#print(f"exception in receiving from {addr[1]}", flush=True)
 			break
+		
 		if not data:
 			conn.close()
-			#print(f"connection closed from {addr[1]}", flush=True)
 			break
 
 		threading.Thread(target=handle_msg, args=(data, conn, addr)).start()
@@ -62,13 +59,13 @@ def handle_msg(data, conn, addr):
 		for sock in client_sockets: # tell existing clients to connect to the new client
 			if None != sock:
 				try:
-					sock[0].sendall(bytes(f"connect {parameters[1]} {parameters[2]}\n", "utf-8"))
+					sock[0].sendall(bytes(f"connect {parameters[1]} {parameters[2]}\x04", "utf-8"))
 				except:
 					continue
 
 		for i in range(5): # tell the new client to connect to existing clients
 			if None != client_sockets[i]:
-				conn.sendall(bytes(f"connect {i+1} {client_ports[i]}\n", "utf-8"))
+				conn.sendall(bytes(f"connect {i+1} {client_ports[i]}\x04", "utf-8"))
 		
 		id_to_port[int(parameters[1])-1] = addr[1]
 		client_sockets[int(parameters[1])-1] = (conn, addr)

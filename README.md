@@ -1,5 +1,7 @@
 # Multi-Paxos
 
+## Files
+
 node.py:
     nodes that are trying to achive consensus
 
@@ -11,3 +13,7 @@ blogapp.py:
 
 testblogapp.py:
     Simple testing
+
+## Control Characters
+
+append 0x04 to the end of every message (except for the init message) so receivers can parse multiple messages

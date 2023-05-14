@@ -33,7 +33,7 @@ def get_user_input():
 			for i in range(1, 6):
 				if PROCESS_ID != i and None != sockets[i] and True == link_work[i]:
 					try:
-						sockets[i].sendall(bytes(f"Hello from P{PROCESS_ID}", "utf-8"))
+						sockets[i].sendall(bytes(f"Hello from P{PROCESS_ID}\x04", "utf-8"))
 					except:
 						print(f"can't send hi to {i}\n")
 		elif "fail" == parameters[0]:
@@ -49,6 +49,7 @@ def get_user_input():
 def handle_message_from(id, data): #id is the id that current process receives from
 	print(f"{data}")
 	parameters = data.split(" ")
+	# print(parameters)
 
 	if "connect" == parameters[0]:
 		if int(parameters[1]) >= PROCESS_ID: # only connect to client with smaller id
@@ -56,7 +57,7 @@ def handle_message_from(id, data): #id is the id that current process receives f
 		try:
 			sockets[int(parameters[1])] = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 			sockets[int(parameters[1])].connect((SERVER_IP, int(parameters[2])))
-			sockets[int(parameters[1])].sendall(bytes(f"init {PROCESS_ID}\n", "utf-8"))
+			sockets[int(parameters[1])].sendall(bytes(f"init {PROCESS_ID}", "utf-8")) # don't append 0x04 when initializing
 			threading.Thread(target=listen_message_from, args=[int(parameters[1])]).start() # listen to message from the target client
 		except:
 			pass
@@ -78,7 +79,7 @@ def listen_message_from(id):
 			continue;
 
 		data = data.decode()
-		data = data.split("\n") # to prevent recving mutiple messgaes, the last element is always ""
+		data = data.split("\x04") # to prevent recving mutiple messgaes, the last element is always ""
 		for line in data:
 			if "" == line:
 				continue
