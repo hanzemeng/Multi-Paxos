@@ -4,7 +4,7 @@ if __name__ == '__main__':
     bethesda_game_forum = blogapp.Forum()
 
     b1 = blogapp.Blog('crdgdr', 'Morrowind is the BEST', 'title^')
-    c1 = blogapp.Comment('crdgdr', 'so ture!')
+    c1 = blogapp.Comment('crdgdr', 'Morrowind is the BEST', 'so ture!')
     b2 = blogapp.Blog('crdgdr', 'When will we get Starfield?', "It's taking forever")
     b3 = blogapp.Blog('crdgdr', 'Morrowind is the BEST', 'Yet another Morrowind post')
 

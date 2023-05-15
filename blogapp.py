@@ -1,6 +1,7 @@
 class Comment:
-    def __init__(self, username: str, content: str):
+    def __init__(self, username: str, title: str, content: str):
         self.username = username
+        self.title = title
         self.content = content
     
     def format_comment(self) -> str:
@@ -14,6 +15,7 @@ class Blog:
         self.comments = []
     
     def add_comment(self, c: Comment):
+        c.title = self.title
         self.comments.append(c)
 
     def format_title(self) -> str:
