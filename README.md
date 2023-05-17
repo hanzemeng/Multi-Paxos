@@ -16,4 +16,8 @@ testblogapp.py:
 
 ## Control Characters
 
-append 0x04 to the end of every message (except for the init message) so receivers can parse multiple messages
+All control characters are defined in control_character.py.
+
+Append GS (decimal value 29) to every message (except for the init message) so receivers can parse multiple messages
+Append RS (decimal value 30) to every parameter in a message so receivers can parse the parameters
+Append RS (decimal value 30) to every parameter in a block operation so Block can parse each field
