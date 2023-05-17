@@ -2,8 +2,8 @@ import socket
 import threading
 import sys
 from os import _exit
-from sys import stdout
 from time import sleep
+from blockchain import *
 
 condtion_lock = threading.Condition()
 
@@ -16,16 +16,21 @@ SERVER_PORT = 9000
 sockets = 6 * [None] # 0 is for server; rest are for other nodes
 link_work = 6 * [False] # 0 is for server; rest are for other nodes
 
+blockchain = Blockchain()
 
 def get_user_input():
 	while True:
-		user_input = input()
+		try:
+			user_input = input()
+		except:
+			continue
+		
 		parameters = user_input.split()
 		if 0 == len(parameters) or "crash" == parameters[0]:
 			for sock in sockets:
 				if None != sock:
 					sock.close()
-			stdout.flush()
+			sys.stdout.flush()
 			_exit(0)
 		elif "wait" == parameters[0]:
 			sleep(int(parameters[1]))
@@ -44,6 +49,25 @@ def get_user_input():
 			condtion_lock.acquire()
 			link_work[int(parameters[1])] = True
 			condtion_lock.release()
+
+		elif "p" == parameters[0] or "post" == parameters[0]:
+			operation = "POST"
+			print("Enter username, max 16 character")
+			username = sys.stdin.read(16)
+			print("\nEnter title, max 32 character")
+			title = sys.stdin.read(32)
+			print("\nEnter content, max 256 character")
+			content = sys.stdin.read(256)
+			
+			if 0 == len(username) or 0 == len(title) or 0 == len(content):
+				print("\nPost canceled")
+				continue
+			new_block = blockchain.add_block(operation, username, title, content)
+			blockchain.commit_block(Block.block_to_string(new_block))
+			print("\nPost created")
+
+		elif "b" == parameters[0]:
+			blockchain.print()
 
 
 def handle_message_from(id, data): #id is the id that current process receives from
