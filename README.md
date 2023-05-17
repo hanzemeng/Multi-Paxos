@@ -18,6 +18,6 @@ testblogapp.py:
 
 All control characters are defined in control_character.py.
 
-Append GS (decimal value 29) to every message (except for the init message) so receivers can parse multiple messages
-Append RS (decimal value 30) to every parameter in a message so receivers can parse the parameters
-Append RS (decimal value 30) to every parameter in a block operation so Block can parse each field
+Append GS (decimal value 29) to every message (except for the init message) so receivers can parse multiple messages.<br>
+Append RS (decimal value 30) to every parameter in a message so receivers can parse the parameters.<br>
+Append RS (decimal value 30) to every parameter in a block operation so Block can parse each field.<br>
