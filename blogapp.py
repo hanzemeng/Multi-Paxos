@@ -17,9 +17,6 @@ class Blog:
     def add_comment(self, c: Comment):
         c.title = self.title
         self.comments.append(c)
-
-    def format_title(self) -> str:
-        return f'{self.title}'
     
     def format_title_content(self) -> str:
         return f'Title: {self.title}\nContent: {self.content}\n'
@@ -52,7 +49,7 @@ class Forum:
         if not self.blogs:
             print('BLOG EMPTY', flush=True)
             return
-        print('\n'.join(map(Blog.format_title, self.blogs)) + '\n', flush=True)
+        print('\n'.join(b.title for b in self.blogs) + '\n', flush=True)
     
     def view_user(self, u: str):
         user_blogs = []
