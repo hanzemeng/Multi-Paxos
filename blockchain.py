@@ -3,13 +3,13 @@ import hashlib
 
 class Block:
 	def __init__(self):
-		pervious_block = None
-		pervious_block_hash = "0000000000000000000000000000000000000000000000000000000000000000"
-		operation = "unknown"
-		username = "unknown"
-		title = "unknown"
-		content = "unknown"
-		nonce = 0
+		self.pervious_block = None
+		self.pervious_block_hash = "0000000000000000000000000000000000000000000000000000000000000000"
+		self.operation = "unknown"
+		self.username = "unknown"
+		self.title = "unknown"
+		self.content = "unknown"
+		self.nonce = 0
 
 	def to_bytes(self):
 		temp_string = self.pervious_block_hash + self.operation + self.username + self.title + self.content + str(self.nonce)
@@ -67,4 +67,11 @@ class Blockchain:
 		while 0 != len(stack):
 			current = stack.pop()
 			print(Block.block_to_string(current, SPACE))
-
+	
+	def length(self):
+		stack = []
+		current = self.tail
+		while None != current:
+			stack.append(current)
+			current = current.pervious_block
+		return len(stack)

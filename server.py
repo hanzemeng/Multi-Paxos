@@ -1,10 +1,9 @@
 import socket
-import hashlib
 import threading
-import sys
 from os import _exit
 from sys import stdout
 from time import sleep
+from control_character import *
 
 IP = socket.gethostbyname('localhost')
 PORT = 9000
@@ -29,10 +28,6 @@ def get_user_input():
 			_exit(0)
 		elif "wait" == parameters[0]:
 			sleep(int(parameters[1]))
-		elif "b" == parameters[0] or "Balance" == parameters[0]:
-			print(f"P1: ${blockchain.get_balance(1)}, P2: ${blockchain.get_balance(2)}, P3: ${blockchain.get_balance(3)}", flush=True)
-		elif "c" == parameters[0] or "Blockchain" == parameters[0]:
-			blockchain.print()
 
 def respond(conn, addr):
 	while True: # handle message sent from a client
@@ -59,13 +54,13 @@ def handle_msg(data, conn, addr):
 		for sock in client_sockets: # tell existing clients to connect to the new client
 			if None != sock:
 				try:
-					sock[0].sendall(bytes(f"connect {parameters[1]} {parameters[2]}\x04", "utf-8"))
+					sock[0].sendall(bytes(f"connect{RS}{parameters[1]}{RS}{parameters[2]}{GS}", "utf-8"))
 				except:
 					continue
 
 		for i in range(5): # tell the new client to connect to existing clients
 			if None != client_sockets[i]:
-				conn.sendall(bytes(f"connect {i+1} {client_ports[i]}\x04", "utf-8"))
+				conn.sendall(bytes(f"connect{RS}{i+1}{RS}{client_ports[i]}{GS}", "utf-8"))
 		
 		id_to_port[int(parameters[1])-1] = addr[1]
 		client_sockets[int(parameters[1])-1] = (conn, addr)

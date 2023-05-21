@@ -12,11 +12,11 @@ if __name__ == '__main__':
     bethesda_game_forum.print_all()
     bethesda_game_forum.view_user('crdgdr')
     bethesda_game_forum.read_title('?')
-    bethesda_game_forum.post_comment(c1, '?')
+    bethesda_game_forum.post_comment(c1)
     print()
 
     bethesda_game_forum.post_blog(b1)
-    bethesda_game_forum.post_comment(c1, 'Morrowind is the BEST')
+    bethesda_game_forum.post_comment(c1)
 
     print('One post:')
     print('Print all:')

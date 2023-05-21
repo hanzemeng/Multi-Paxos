@@ -31,19 +31,23 @@ class Forum:
     def __init__(self):
         self.blogs = []
     
-    def post_blog(self, b: Blog):
+    def post_blog(self, b: Blog) -> bool:
         for existing in self.blogs:
             if existing.title == b.title:
                 print('DUPLICATE TITLE', flush=True)
-                return
+                return False
         self.blogs.append(b)
+        print(f'NEW POST *{b.title}* from user *{b.username}*', flush=True)
+        return True
     
-    def post_comment(self, c: Comment, t: str):
+    def post_comment(self, c: Comment) -> bool:
         for b in self.blogs:
-            if b.title == t:
+            if b.title == c.title:
                 b.add_comment(c)
-                return
+                print(f'NEW COMMENT on *{c.title}* from user *{c.username}*', flush=True)
+                return True
         print('CANNOT COMMENT', flush=True)
+        return False
     
     def print_all(self):
         if not self.blogs:
