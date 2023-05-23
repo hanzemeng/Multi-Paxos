@@ -8,10 +8,11 @@ from queue import Queue
 from blockchain import *
 from blogapp import *
 from paxos import *
+import numpy as np
 
 condition_lock = threading.Condition()
 
-DELAY_TIME = 0.01
+DELAY_TIME = 0.5
 
 PROCESS_ID = -1
 PROCESS_PORT = -1
@@ -20,14 +21,21 @@ SERVER_PORT = 9000
 sockets = 6 * [None] # 0 is for server; rest are for other nodes
 link_work = 6 * [False] # 0 is for server; rest are for other nodes
 
-blockchain = Blockchain()
 leader_id = -1
 ballot = Ballot()
+accepted_ballot = Ballot()
+accepted_block = "none"
+response_ballot = []
+response_block = []
+
 slots = []
+
 forum = Forum()
+blockchain = Blockchain()
 request_queue = Queue()
 
 def get_user_input():
+	global condition_lock, leader_id
 	while True:
 		try:
 			user_input = input()
@@ -73,14 +81,23 @@ def get_user_input():
 				print("\nPost canceled")
 				continue
 			
-			r = Request(operation, username, title, content)
+			condition_lock.acquire()
+
+			new_block = blockchain.add_block(operation, username, title, content)
+			new_block_string = Block.block_to_string(new_block)
+
 			if leader_id == -1:
-				request_queue.put(r)
+				request_queue.put(new_block_string)
+				condition_lock.notify_all()
 				send_prepare()
 			elif leader_id == PROCESS_ID:
-				request_queue.put(r)
+				request_queue.put(new_block_string)
+				condition_lock.notify_all()
 			else:
-				forward_request(r)
+				# forward_request(new_block_string)
+				pass
+
+			condition_lock.release()
 		
 		elif 'c' == parameters[0] or 'comment' == parameters[0]:
 			operation = 'COMMENT'
@@ -96,14 +113,23 @@ def get_user_input():
 				print("\nComment canceled")
 				continue
 			
-			r = Request(operation, username, title, content)
+			condition_lock.acquire()
+
+			new_block = blockchain.add_block(operation, username, title, content)
+			new_block_string = Block.block_to_string(new_block)
+
 			if leader_id == -1:
-				request_queue.put(r)
+				request_queue.put(new_block_string)
+				condition_lock.notify_all()
 				send_prepare()
 			elif leader_id == PROCESS_ID:
-				request_queue.put(r)
+				request_queue.put(new_block_string)
+				condition_lock.notify_all()
 			else:
-				forward_request(r)
+				# forward_request(new_block_string)
+				pass
+
+			condition_lock.release()
 
 		elif "b" == parameters[0]:
 			blockchain.print()
@@ -118,9 +144,11 @@ def get_user_input():
 			print('\nInvalid input!', flush=True)
 
 def handle_message_from(id, data): #id is the id that current process receives from
-	# print(f"{id}, {data}")
+	print(f"{id}, {data}")
 	parameters = data.split(RS)
 	# print(parameters)
+
+	sleep(DELAY_TIME)
 
 	if "connect" == parameters[0]:
 		if int(parameters[1]) >= PROCESS_ID: # only connect to client with smaller id
@@ -135,13 +163,13 @@ def handle_message_from(id, data): #id is the id that current process receives f
 	elif 'prepare' == parameters[0]:
 		send_promise(parameters[1:], id)
 	elif 'promise' == parameters[0]:
-		received_promise(parameters[1:], id)
+		receive_promise(parameters[1:], id)
 	elif 'accept' == parameters[0]:
 		send_accepted(parameters[1:], id)
 	elif 'accepted' == parameters[0]:
-		received_accepted(parameters[1:], id)
+		receive_accepted(parameters[1:], id)
 	elif 'decide' == parameters[0]:
-		received_decide(parameters[1:], id)
+		receive_decide(parameters[1:], id)
 	else:
 		print('Invalid message received from another node!', flush=True)
 
@@ -181,15 +209,16 @@ def accept_connection():
 			break
 
 def send_prepare():
-	global slots, ballot
-	print(f'P{PROCESS_ID} sending prepare')
+	global slots, ballot, response_ballot, response_block
+	#print(f'P{PROCESS_ID} sending prepare')
 	ballot.seq_num = ballot.seq_num + 1
-	ballot.pid = PROCESS_ID
 	ballot.depth = blockchain.length()
-	s = Slot(blockchain.length() + 1, ballot)
-	slots.append(s)
-	# print(';; '.join(map(Slot.to_string, slots)), flush=True)
-	msg = f'prepare{RS}{s.to_string()}{GS}'
+
+	response_ballot = []
+	response_block = []
+	threading.Thread(target=wait_for_promise).start()
+
+	msg = f'prepare{RS}{Ballot.ballot_to_string(ballot)}{GS}'
 	for i in range(1, 6):
 		if i != PROCESS_ID:
 			try:
@@ -197,162 +226,156 @@ def send_prepare():
 			except:
 				print(f'Error sending to node {i}', flush=True)
 
-def send_promise(args, id):
-	global leader_id, slots, ballot
-	# args[0] = slot_num, args[1] = accept_num, args[2] = accept_val
-	recv_bal = Ballot(line=args[1])
-	print(f'Received prepare from {id}. Slot: {args[0]}, my ballot: {ballot.to_string()}, recv ballot: {recv_bal.to_string()}', flush=True)
-	if recv_bal < ballot:
-		print('Smaller ballot, what a noob', flush=True)
-		return
-	curr_slot = Slot(int(args[0]))
-	for s in slots:
-		if s.slot_num == int(args[0]):
-			curr_slot = s
-			break
-	# print(';; '.join(map(Slot.to_string, slots)), flush=True)
-	try:
-		ballot = recv_bal
-		leader_id = recv_bal.pid
-		slots.append(curr_slot)
-		print(f'Promising to P{leader_id}', flush=True)
-		sockets[leader_id].sendall(bytes(f'promise{RS}{ballot.to_string()}{RS}{curr_slot.to_string()}{GS}', 'utf-8'))
-	except:
-		print(f'Error sending to node {leader_id}', flush=True)
+def wait_for_promise():
+	global condition_lock, leader_id, response_ballot, response_block, request_queue
 
-def received_promise(args, id):
-	global slots, leader_id
-	# args[0] should be my own ballot, args[1] = slot_num, args[2] = accept_num, args[3] = accept_val
-	print(f'Received promise from {id}', flush=True)
-	curr_slot = Slot(int(args[1]))
-	for s in slots:
-		if s.slot_num == int(args[1]):
-			if not s.promise_quorum:
-				s.replies.append(args[2:])
-				curr_slot = s
-				break
-	if curr_slot.promise_quorum:
-		return
-	if len(curr_slot.replies) >= 2:
-		leader_id = PROCESS_ID
-		curr_slot.replies = []
-		curr_slot.promise_quorum = True
-		send_accept(curr_slot)
+	condition_lock.acquire()
+	while len(response_ballot) < 2:
+		condition_lock.wait()
 
-def send_accept(curr_slot: Slot):
-	global slots, ballot
-	max_i = -1
-	max_b = Ballot()
-	max_v = Request()
-	for i in range(0, len(curr_slot.replies)):
-		bal = Ballot(line=curr_slot.replies[i][0])
-		val = Request(line=curr_slot.replies[i][1])
-		if (val.op != None) and (max_b < bal):
-			max_i = i
-			max_b = bal
-			max_v = val
-	if max_i > -1:
-		curr_slot.accept_num = max_b
-		curr_slot.accept_val = max_v
-	else:
-		curr_slot.accept_num = ballot
-		curr_slot.accept_val = request_queue.queue[0]
-	for s in slots:
-		if s.slot_num == curr_slot.slot_num:
-			slots.remove(s)
-			break
-	slots.append(curr_slot)
-	print(f'Sending accept for slot {curr_slot.slot_num}, ballot {curr_slot.accept_num.to_string()}, content {curr_slot.accept_val.to_string()}', flush=True)
-	# print(';; '.join(map(Slot.to_string, slots)), flush=True)
-	msg = f'accept{RS}{curr_slot.to_string()}{GS}'
-	for i in range(1, 6):
-		if i != PROCESS_ID:
-			try:
-				sockets[i].sendall(bytes(msg, 'utf-8'))
-			except:
-				print(f'Error sending to node {i}', flush=True)
+	max_ballot_index = np.argmax(response_ballot)
 
-def send_accepted(args, id):
-	global ballot, slots
-	# args[0] = slot_num, args[1] = accept_num, args[2] = accept_val
-	recv_bal = Ballot(line=args[1])
-	print(f'Received accept from {id}. My ballot: {ballot.to_string()}, recv ballot: {recv_bal.to_string()}')
-	if recv_bal < ballot:
-		print('Smaller ballot, what a noob', flush=True)
-		return
-	# print(';; '.join(map(Slot.to_string, slots)), flush=True)
-	for s in slots:
-		if s.slot_num == int(args[0]):
-			s.accept_num = recv_bal
-			s.accept_val = Request(line=args[2])
-			print(f'Sending accepted to P{leader_id}', flush=True)
-			msg = f'accepted{RS}{s.to_string()}{GS}'
-			try:
-				sockets[leader_id].sendall(bytes(msg, 'utf-8'))
-			except:
-				print(f'Error sending to node {leader_id}', flush=True)
-			break
+	if np.max(response_ballot) != Ballot():
+		max_ballot_index = np.argmax(response_ballot)
+		request_queue.put(response_block[max_ballot_index])
 
-def received_accepted(args, id):
-	global slots
-	# args[0] = slot_num, args[1] = accept_num, args[2] = accept_val
-	print(f'Received accepted from {id}', flush=True)
-	curr_slot = Slot(int(args[0]))
-	for s in slots:
-		if s.slot_num == int(args[0]):
-			if not s.accept_quorum:
-				s.replies.append(args[1:])
-				curr_slot = s
-				break
-	# print('Sanity check:') # sanity check, all three should be the same
-	# print(curr_slot.accept_val.to_string())
-	# print(request_queue.queue[0].to_string())
-	# print(args[2])
-	if curr_slot.accept_quorum:
-		return
-	if len(curr_slot.replies) >= 2:
-		curr_slot.accept_quorum = True
-		curr_slot.replies = []
-		execute_operation(request_queue.get())
-		print(f'Sending decide for slot {curr_slot.slot_num}, ballot {curr_slot.accept_num.to_string()}, content {curr_slot.accept_val.to_string()}', flush=True)
-		msg = f'decide{RS}{curr_slot.to_string()}{GS}'
+	leader_id = PROCESS_ID
+	threading.Thread(target=become_leader).start()
+
+	condition_lock.release()
+
+def become_leader():
+	global ballot, response_ballot, response_block
+
+	while True:
+		condition_lock.acquire()
+		while request_queue.empty():
+			condition_lock.wait()
+		new_block = request_queue.get()
+
+		response_ballot = []
+		response_block = []
+		condition_lock.release()
+
+		msg = f'accept{RS}{Ballot.ballot_to_string(ballot)}{RS}{new_block}{GS}'
 		for i in range(1, 6):
 			if i != PROCESS_ID:
 				try:
 					sockets[i].sendall(bytes(msg, 'utf-8'))
 				except:
 					print(f'Error sending to node {i}', flush=True)
-		for s in slots:
-			if s.slot_num == int(args[0]):
-				slots.remove(s)
-				break
-		slots.append(curr_slot)
-		# print(';; '.join(map(Slot.to_string, slots)), flush=True)
 
-def received_decide(args, id):
-	print(f'Received decide from {id}', flush=True)
-	r = Request(line=args[2])
-	execute_operation(r)
+		condition_lock.acquire()
+		while len(response_ballot) < 2:
+			condition_lock.wait()
+		condition_lock.release()
 
-def forward_request(r: Request):
-	pass
+		execute_operation(new_block)
 
-def execute_operation(r: Request):
-	global blockchain
-	with condition_lock:
-		success = False
-		if r.op == 'POST':
-			success = forum.post_blog(Blog(r.username, r.title, r.content))
-		elif r.op == 'COMMENT':
-			success = forum.post_comment(Comment(r.username, r.title, r.content))
-		if not success:
-			return
-		new_block = blockchain.add_block(r.op, r.username, r.title, r.content)
-		blockchain.commit_block(Block.block_to_string(new_block))
+		msg = f'decide{RS}{new_block}{GS}'
+		for i in range(1, 6):
+			if i != PROCESS_ID:
+				try:
+					sockets[i].sendall(bytes(msg, 'utf-8'))
+				except:
+					print(f'Error sending to node {i}', flush=True)
+
+def send_promise(args, id):
+	global leader_id, slots, ballot
+
+	recv_bal = Ballot.string_to_ballot(args[0])
+	if recv_bal < ballot:
+		print('Smaller ballot, what a noob', flush=True)
+		return
+
+	ballot = recv_bal
+	leader_id = recv_bal.pid
+
+	#print(f'Promising to P{leader_id}', flush=True)
+	try:
+		sockets[leader_id].sendall(bytes(f'promise{RS}{Ballot.ballot_to_string(ballot)}{RS}{Ballot.ballot_to_string(accepted_ballot)}{RS}{accepted_block}{GS}', 'utf-8'))
+	except:
+		print(f'Error sending to node {leader_id}', flush=True)
+
+def receive_promise(args, id):
+	global leader_id, ballot, response_ballot, response_block
+
+	condition_lock.acquire()
+	sent_bal = Ballot.string_to_ballot(args[0])
+	if sent_bal != ballot:
+		condition_lock.release()
+		return
+
+	response_ballot.append(Ballot.string_to_ballot(args[1]))
+	response_block.append(args[2])
+	condition_lock.notify_all()
+	condition_lock.release()
+
+def send_accepted(args, id):
+	global condition_lock, leader_id, ballot, accepted_ballot, accepted_block
+
+	condition_lock.acquire()
+	recv_bal = Ballot.string_to_ballot(args[0])
+	if recv_bal < ballot:
+		print('Smaller ballot, what a noob', flush=True)
+		condition_lock.release()
+		return
+
+	leader_id = id
+	accepted_ballot = recv_bal
+	accepted_block = args[1]
+	condition_lock.release()
+
+	#print(f'Sending accepted to P{leader_id}', flush=True)
+	msg = f'accepted{RS}{args[0]}{RS}{args[1]}{GS}'
+	try:
+		sockets[leader_id].sendall(bytes(msg, 'utf-8'))
+	except:
+		print(f'Error sending to node {leader_id}', flush=True)
+
+def receive_accepted(args, id):
+	global condition_lock, ballot, response_ballot, response_block
+
+	condition_lock.acquire()
+	sent_bal = Ballot.string_to_ballot(args[0])
+	if sent_bal != ballot:
+		condition_lock.release()
+		return
+
+	response_ballot.append(Ballot.string_to_ballot(args[0]))
+	response_block.append(args[1]) # unnecessary
+	condition_lock.notify_all()
+	condition_lock.release()
+
+def receive_decide(args, id):
+	execute_operation(args[0])
+
+def execute_operation(block_string):
+	global condition_lock, forum, blockchain
+
+	condition_lock.acquire()
+	success = False
+	new_block = Block.string_to_block(block_string)
+	if new_block.operation == 'POST':
+		success = forum.post_blog(Blog(new_block.username, new_block.title, new_block.content))
+	elif new_block.operation == 'COMMENT':
+		success = forum.post_comment(Comment(new_block.username, new_block.title, new_block.content))
+	if False == success:
+		condition_lock.release()
+		return
+
+	blockchain.commit_block(block_string)
+	condition_lock.release()
+		
+# def forward_request(r: Request):
+# 	pass
+
 
 if __name__ == "__main__":
 	PROCESS_ID = int(sys.argv[1])
+	ballot.seq_num = 0
 	ballot.pid = PROCESS_ID
+	ballot.depth = 0
 	sockets[PROCESS_ID] = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 	sockets[PROCESS_ID].setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 	sockets[PROCESS_ID].bind((SERVER_IP, 0))
