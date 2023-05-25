@@ -14,6 +14,7 @@ condition_lock = threading.Condition()
 forward_lock = threading.Condition()
 
 DELAY_TIME = 0.5
+TIME_OUT_TIME = 5
 
 PROCESS_ID = -1
 PROCESS_PORT = -1
@@ -91,9 +92,10 @@ def get_user_input():
 			new_block_string = Block.block_to_string(new_block)
 
 			if leader_id == -1:
+				leader_id = PROCESS_ID
 				request_queue.put(new_block_string)
 				condition_lock.notify_all()
-				send_prepare()
+				threading.Thread(target=send_prepare).start()
 			elif leader_id == PROCESS_ID:
 				request_queue.put(new_block_string)
 				condition_lock.notify_all()
@@ -128,7 +130,7 @@ def get_user_input():
 				leader_id = PROCESS_ID
 				request_queue.put(new_block_string)
 				condition_lock.notify_all()
-				send_prepare()
+				threading.Thread(target=send_prepare).start()
 			elif leader_id == PROCESS_ID:
 				request_queue.put(new_block_string)
 				condition_lock.notify_all()
@@ -172,24 +174,17 @@ def handle_message_from(id, data): #id is the id that current process receives f
 		except:
 			print(f'Error connecting to node {int(parameters[1])}', flush=True)
 	elif 'prepare' == parameters[0]:
-		send_promise(parameters[1:], id)
+		on_receive_prepare(parameters[1:], id)
 	elif 'promise' == parameters[0]:
-		receive_promise(parameters[1:], id)
+		on_receive_promise(parameters[1:], id)
 	elif 'accept' == parameters[0]:
-		send_accepted(parameters[1:], id)
+		on_receive_accept(parameters[1:], id)
 	elif 'accepted' == parameters[0]:
-		receive_accepted(parameters[1:], id)
+		on_receive_accepted(parameters[1:], id)
 	elif 'decide' == parameters[0]:
-		receive_decide(parameters[1:], id)
+		on_receive_decide(parameters[1:], id)
 	elif 'forward' == parameters[0]:
-		if PROCESS_ID == leader_id or -1 == leader_id:
-			condition_lock.acquire()
-			request_queue.put(parameters[1])
-			condition_lock.notify_all()
-			condition_lock.release()
-		else:
-			sockets[leader_id].sendall(data)
-
+		on_receive_forward(parameters[1:], id)
 	else:
 		print('Invalid message received from another node!', flush=True)
 
@@ -229,16 +224,19 @@ def accept_connection():
 			break
 
 def send_prepare():
-	global slots, ballot, promise_response_ballot, promise_response_block
-	#print(f'P{PROCESS_ID} sending prepare')
+	global condition_lock, ballot, promise_response_ballot, promise_response_block
+	
+	condition_lock.acquire()
+
 	ballot.seq_num = ballot.seq_num + 1
 	ballot.depth = blockchain.length()
-
 	promise_response_ballot = []
 	promise_response_block = []
 	threading.Thread(target=wait_for_promise).start()
-
 	msg = f'prepare{RS}{Ballot.ballot_to_string(ballot)}{GS}'
+
+	condition_lock.release()
+
 	for i in range(1, 6):
 		if i != PROCESS_ID:
 			try:
@@ -258,14 +256,14 @@ def wait_for_promise():
 	if np.max(promise_response_ballot) != Ballot():
 		max_ballot_index = np.argmax(promise_response_ballot)
 		request_queue.put(promise_response_block[max_ballot_index])
+		condition_lock.notify_all()
 
-	leader_id = PROCESS_ID
 	threading.Thread(target=become_leader).start()
 
 	condition_lock.release()
 
 def become_leader():
-	global ballot, accept_response_ballot, accept_response_block
+	global condition_lock, ballot, accept_response_ballot, accept_response_block, request_queue
 
 	while True:
 		condition_lock.acquire()
@@ -275,9 +273,10 @@ def become_leader():
 
 		accept_response_ballot = []
 		accept_response_block = []
+		msg = f'accept{RS}{Ballot.ballot_to_string(ballot)}{RS}{new_block}{GS}'
+
 		condition_lock.release()
 
-		msg = f'accept{RS}{Ballot.ballot_to_string(ballot)}{RS}{new_block}{GS}'
 		for i in range(1, 6):
 			if i != PROCESS_ID:
 				try:
@@ -300,25 +299,30 @@ def become_leader():
 				except:
 					print(f'Error sending to node {i}', flush=True)
 
-def send_promise(args, id):
-	global leader_id, slots, ballot
+def on_receive_prepare(args, id):
+	global condition_lock, leader_id, ballot
+
+	condition_lock.acquire()
 
 	recv_bal = Ballot.string_to_ballot(args[0])
 	if recv_bal < ballot:
 		print('Smaller ballot, what a noob', flush=True)
+		condition_lock.release()
 		return
 
 	ballot = recv_bal
 	leader_id = recv_bal.pid
+	msg = f'promise{RS}{Ballot.ballot_to_string(ballot)}{RS}{Ballot.ballot_to_string(accepted_ballot)}{RS}{accepted_block}{GS}'
 
-	#print(f'Promising to P{leader_id}', flush=True)
+	condition_lock.release()
+
 	try:
-		sockets[leader_id].sendall(bytes(f'promise{RS}{Ballot.ballot_to_string(ballot)}{RS}{Ballot.ballot_to_string(accepted_ballot)}{RS}{accepted_block}{GS}', 'utf-8'))
+		sockets[leader_id].sendall(bytes(msg, 'utf-8'))
 	except:
 		print(f'Error sending to node {leader_id}', flush=True)
 
-def receive_promise(args, id):
-	global leader_id, ballot, promise_response_ballot, promise_response_block
+def on_receive_promise(args, id):
+	global condition_lock, leader_id, ballot, promise_response_ballot, promise_response_block
 
 	condition_lock.acquire()
 	sent_bal = Ballot.string_to_ballot(args[0])
@@ -331,32 +335,34 @@ def receive_promise(args, id):
 	condition_lock.notify_all()
 	condition_lock.release()
 
-def send_accepted(args, id):
+def on_receive_accept(args, id):
 	global condition_lock, leader_id, ballot, accepted_ballot, accepted_block
 
 	condition_lock.acquire()
+
 	recv_bal = Ballot.string_to_ballot(args[0])
 	if recv_bal < ballot:
 		print('Smaller ballot, what a noob', flush=True)
 		condition_lock.release()
 		return
 
-	leader_id = id
+	leader_id = recv_bal.pid
 	accepted_ballot = recv_bal
 	accepted_block = args[1]
+	msg = f'accepted{RS}{args[0]}{RS}{args[1]}{GS}'
+
 	condition_lock.release()
 
-	#print(f'Sending accepted to P{leader_id}', flush=True)
-	msg = f'accepted{RS}{args[0]}{RS}{args[1]}{GS}'
 	try:
 		sockets[leader_id].sendall(bytes(msg, 'utf-8'))
 	except:
 		print(f'Error sending to node {leader_id}', flush=True)
 
-def receive_accepted(args, id):
+def on_receive_accepted(args, id):
 	global condition_lock, ballot, accept_response_ballot, accept_response_block
 
 	condition_lock.acquire()
+
 	sent_bal = Ballot.string_to_ballot(args[0])
 	if sent_bal != ballot:
 		condition_lock.release()
@@ -365,9 +371,10 @@ def receive_accepted(args, id):
 	accept_response_ballot.append(Ballot.string_to_ballot(args[0]))
 	accept_response_block.append(args[1]) # unnecessary
 	condition_lock.notify_all()
+
 	condition_lock.release()
 
-def receive_decide(args, id):
+def on_receive_decide(args, id):
 	global forward_lock, forwarded_request_queue
 
 	forward_lock.acquire()
@@ -378,10 +385,31 @@ def receive_decide(args, id):
 
 	execute_operation(args[0])
 
+def on_receive_forward(args, id):
+	global condition_lock, leader_id, request_queue
+	if PROCESS_ID == leader_id or -1 == leader_id:
+		condition_lock.acquire()
+		request_queue.put(args[0])
+		condition_lock.notify_all()
+
+		if -1 == leader_id:
+			leader_id = PROCESS_ID
+			threading.Thread(target=send_prepare).start()
+
+		condition_lock.release()
+	else:
+		msg = f'forward{RS}{args[0]}{RS}{GS}'
+		try:
+			sockets[leader_id].sendall(bytes(msg, 'utf-8'))
+		except:
+			print(f'Error sending to node {leader_id}', flush=True)
+
+
 def execute_operation(block_string):
 	global condition_lock, forum, blockchain
 
 	condition_lock.acquire()
+
 	success = False
 	new_block = Block.string_to_block(block_string)
 	if new_block.operation == 'POST':
@@ -393,6 +421,7 @@ def execute_operation(block_string):
 		return
 
 	blockchain.commit_block(block_string)
+
 	condition_lock.release()
 		
 def forward_request():
@@ -400,6 +429,7 @@ def forward_request():
 
 	while True:
 		forward_lock.acquire()
+		
 		while forwarded_request_queue.empty():
 			forward_lock.wait()
 
