@@ -19,13 +19,13 @@ class Blog:
         self.comments.append(c)
     
     def format_title_content(self) -> str:
-        return f'Title: {self.title}\nContent: {self.content}\n'
+        return f'\nTitle: {self.title}\nContent: {self.content}'
 
     def format_full(self) -> str:
         c = '\n'.join(map(Comment.format_comment, self.comments))
         if not c:
-            return f'Title: {self.title}\nUsername: {self.username}\nContent: {self.content}\nComments: ~~Add your comment~~\n'
-        return f'Title: {self.title}\nUsername: {self.username}\nContent: {self.content}\nComments:\n{c}\n'
+            return f'\nTitle: {self.title}\nUsername: {self.username}\nContent: {self.content}\nComments: ~~Add your comment~~'
+        return f'\nTitle: {self.title}\nUsername: {self.username}\nContent: {self.content}\nComments:\n{c}'
 
 class Forum:
     def __init__(self):
@@ -37,14 +37,12 @@ class Forum:
                 print('DUPLICATE TITLE', flush=True)
                 return False
         self.blogs.append(b)
-        print(f'NEW POST *{b.title}* from user *{b.username}*', flush=True)
         return True
     
     def post_comment(self, c: Comment) -> bool:
         for b in self.blogs:
             if b.title == c.title:
                 b.add_comment(c)
-                print(f'NEW COMMENT on *{c.title}* from user *{c.username}*', flush=True)
                 return True
         print('CANNOT COMMENT', flush=True)
         return False
@@ -53,7 +51,7 @@ class Forum:
         if not self.blogs:
             print('BLOG EMPTY', flush=True)
             return
-        print('\n'.join(b.title for b in self.blogs) + '\n', flush=True)
+        print('\n' + '\n'.join(b.title for b in self.blogs), flush=True)
     
     def view_user(self, u: str):
         user_blogs = []

@@ -36,9 +36,6 @@ class Ballot:
         if self == other:
             return False
         return True
-    
-    def to_string(self):
-        return f'{self.seq_num}{US}{self.pid}{US}{self.depth}'
 
     # below are static functions
 
@@ -52,7 +49,7 @@ class Ballot:
         return new_ballot
 
     def ballot_to_string(ballot, delimiter=US):
-        return f'{ballot.seq_num}{US}{ballot.pid}{US}{ballot.depth}'
+        return f'{ballot.seq_num}{delimiter}{ballot.pid}{delimiter}{ballot.depth}'
 
 # class Request:
 #     def __init__(self, op: str = None, username: str = None, title: str = None, content: str = None, *, line: str = None):
