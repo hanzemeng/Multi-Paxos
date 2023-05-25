@@ -14,7 +14,7 @@ condition_lock = threading.Condition()
 forward_lock = threading.Condition()
 
 DELAY_TIME = 0.5
-TIME_OUT_TIME = 5
+TIMEOUT_TIME = 5
 
 PROCESS_ID = -1
 PROCESS_PORT = -1
@@ -27,6 +27,8 @@ leader_id = -1
 ballot = Ballot()
 accepted_ballot = Ballot()
 accepted_block = "none"
+
+sent_ballot = Ballot()
 promise_response_ballot = []
 promise_response_block = []
 accept_response_ballot = []
@@ -224,12 +226,13 @@ def accept_connection():
 			break
 
 def send_prepare():
-	global condition_lock, ballot, promise_response_ballot, promise_response_block
+	global condition_lock, ballot, promise_response_ballot, promise_response_block, sent_ballot
 	
 	condition_lock.acquire()
 
 	ballot.seq_num = ballot.seq_num + 1
 	ballot.depth = blockchain.length()
+	sent_ballot = ballot
 	promise_response_ballot = []
 	promise_response_block = []
 	threading.Thread(target=wait_for_promise).start()
@@ -245,7 +248,7 @@ def send_prepare():
 				print(f'Error sending to node {i}', flush=True)
 
 def wait_for_promise():
-	global condition_lock, leader_id, promise_response_ballot, promise_response_block, request_queue
+	global condition_lock, promise_response_ballot, promise_response_block, request_queue
 
 	condition_lock.acquire()
 	while len(promise_response_ballot) < 2:
@@ -263,7 +266,7 @@ def wait_for_promise():
 	condition_lock.release()
 
 def become_leader():
-	global condition_lock, ballot, accept_response_ballot, accept_response_block, request_queue
+	global condition_lock, ballot, accept_response_ballot, accept_response_block, request_queue, sent_ballot
 
 	while True:
 		condition_lock.acquire()
@@ -271,6 +274,7 @@ def become_leader():
 			condition_lock.wait()
 		new_block = request_queue.get()
 
+		sent_ballot = ballot
 		accept_response_ballot = []
 		accept_response_block = []
 		msg = f'accept{RS}{Ballot.ballot_to_string(ballot)}{RS}{new_block}{GS}'
@@ -286,7 +290,11 @@ def become_leader():
 
 		condition_lock.acquire()
 		while len(accept_response_ballot) < 2:
-			condition_lock.wait()
+			if False == condition_lock.wait(timeout=TIMEOUT_TIME):
+				print("Accepted took too long, abort", flush=True)
+				request_queue.queue.clear()
+				condition_lock.release()
+				return
 		condition_lock.release()
 
 		execute_operation(new_block)
@@ -304,14 +312,14 @@ def on_receive_prepare(args, id):
 
 	condition_lock.acquire()
 
-	recv_bal = Ballot.string_to_ballot(args[0])
-	if recv_bal < ballot:
+	received_ballot = Ballot.string_to_ballot(args[0])
+	if received_ballot < ballot:
 		print('Smaller ballot, what a noob', flush=True)
 		condition_lock.release()
 		return
 
-	ballot = recv_bal
-	leader_id = recv_bal.pid
+	ballot = received_ballot
+	leader_id = received_ballot.pid
 	msg = f'promise{RS}{Ballot.ballot_to_string(ballot)}{RS}{Ballot.ballot_to_string(accepted_ballot)}{RS}{accepted_block}{GS}'
 
 	condition_lock.release()
@@ -322,11 +330,11 @@ def on_receive_prepare(args, id):
 		print(f'Error sending to node {leader_id}', flush=True)
 
 def on_receive_promise(args, id):
-	global condition_lock, leader_id, ballot, promise_response_ballot, promise_response_block
+	global condition_lock, leader_id, ballot, promise_response_ballot, promise_response_block, sent_ballot
 
 	condition_lock.acquire()
-	sent_bal = Ballot.string_to_ballot(args[0])
-	if sent_bal != ballot:
+	received_ballot = Ballot.string_to_ballot(args[0])
+	if received_ballot != sent_ballot:
 		condition_lock.release()
 		return
 
@@ -340,14 +348,14 @@ def on_receive_accept(args, id):
 
 	condition_lock.acquire()
 
-	recv_bal = Ballot.string_to_ballot(args[0])
-	if recv_bal < ballot:
+	received_ballot = Ballot.string_to_ballot(args[0])
+	if received_ballot < ballot:
 		print('Smaller ballot, what a noob', flush=True)
 		condition_lock.release()
 		return
 
-	leader_id = recv_bal.pid
-	accepted_ballot = recv_bal
+	leader_id = received_ballot.pid
+	accepted_ballot = received_ballot
 	accepted_block = args[1]
 	msg = f'accepted{RS}{args[0]}{RS}{args[1]}{GS}'
 
@@ -359,12 +367,12 @@ def on_receive_accept(args, id):
 		print(f'Error sending to node {leader_id}', flush=True)
 
 def on_receive_accepted(args, id):
-	global condition_lock, ballot, accept_response_ballot, accept_response_block
+	global condition_lock, ballot, accept_response_ballot, accept_response_block, sent_ballot
 
 	condition_lock.acquire()
 
-	sent_bal = Ballot.string_to_ballot(args[0])
-	if sent_bal != ballot:
+	received_ballot = Ballot.string_to_ballot(args[0])
+	if received_ballot != sent_ballot:
 		condition_lock.release()
 		return
 
@@ -429,7 +437,7 @@ def forward_request():
 
 	while True:
 		forward_lock.acquire()
-		
+
 		while forwarded_request_queue.empty():
 			forward_lock.wait()
 
