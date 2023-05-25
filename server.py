@@ -43,7 +43,7 @@ def respond(conn, addr):
 		threading.Thread(target=handle_msg, args=(data, conn, addr)).start()
 
 def handle_msg(data, conn, addr):
-	global server_logical_time 
+	global connect_lock 
 	data = data.decode()
 	parameters = data.split()
 
@@ -64,6 +64,19 @@ def handle_msg(data, conn, addr):
 		
 		id_to_port[int(parameters[1])-1] = addr[1]
 		client_sockets[int(parameters[1])-1] = (conn, addr)
+		connect_lock.release()
+
+	elif "disconnect" == parameters[0]:
+		connect_lock.acquire()
+		respond_index = id_to_port.index(addr[1])
+		client_sockets[respond_index][0].sendall(bytes(f"disconnect{RS}{parameters[1]}{GS}", "utf-8"))
+		client_sockets[int(parameters[1])-1][0].sendall(bytes(f"disconnect{RS}{respond_index+1}{GS}", "utf-8"))
+		connect_lock.release()
+	elif "connect" == parameters[0]:
+		connect_lock.acquire()
+		respond_index = id_to_port.index(addr[1])
+		client_sockets[respond_index][0].sendall(bytes(f"connect{RS}{parameters[1]}{GS}", "utf-8"))
+		client_sockets[int(parameters[1])-1][0].sendall(bytes(f"connect{RS}{respond_index+1}{RS}{client_ports[respond_index]}{GS}", "utf-8"))
 		connect_lock.release()
 
 if __name__ == "__main__":

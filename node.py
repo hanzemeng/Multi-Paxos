@@ -42,7 +42,7 @@ request_queue = Queue()
 forwarded_request_queue = Queue()
 
 def get_user_input():
-	global condition_lock, leader_id, request_queue, forward_lock, forwarded_request_queue, backup_file
+	global condition_lock, leader_id, request_queue, forward_lock, forwarded_request_queue, backup_file, link_work
 	while True:
 		try:
 			user_input = input()
@@ -61,17 +61,19 @@ def get_user_input():
 			sleep(int(parameters[1]))
 		elif "hi" == parameters[0]: # say hi to all clients, for debugging
 			for i in range(1, 6):
-				if PROCESS_ID != i and None != sockets[i] and True == link_work[i]:
+				if PROCESS_ID != i and None != sockets[i]:
 					try:
 						sockets[i].sendall(bytes(f"Hello from P{PROCESS_ID}{GS}", "utf-8"))
 					except:
 						print(f"can't send hi to {i}\n")
 		elif "fail" == parameters[0]:
 			condition_lock.acquire()
+			sockets[0].sendall(bytes(f"disconnect {parameters[1]}\n", "utf-8"))
 			link_work[int(parameters[1])] = False
 			condition_lock.release()
 		elif "fix" == parameters[0]:
 			condition_lock.acquire()
+			sockets[0].sendall(bytes(f"connect {parameters[1]}\n", "utf-8"))
 			link_work[int(parameters[1])] = True
 			condition_lock.release()
 
@@ -176,6 +178,8 @@ def handle_message_from(id, data): #id is the id that current process receives f
 			threading.Thread(target=listen_message_from, args=[int(parameters[1])]).start() # listen to message from the target client
 		except:
 			print(f'Error connecting to node {int(parameters[1])}', flush=True)
+	elif "disconnect" == parameters[0]:
+		sockets[int(parameters[1])].close()
 	elif 'prepare' == parameters[0]:
 		on_receive_prepare(parameters[1:], id)
 	elif 'promise' == parameters[0]:
@@ -192,6 +196,8 @@ def handle_message_from(id, data): #id is the id that current process receives f
 		print('Invalid message received from another node!', flush=True)
 
 def listen_message_from(id):
+	global condition_lock, link_work
+
 	condition_lock.acquire()
 	link_work[id] = True
 	condition_lock.release()
@@ -204,8 +210,8 @@ def listen_message_from(id):
 			sockets[id].close()
 			break
 		
-		if False == link_work[id]:
-			continue
+		# if False == link_work[id]:
+		# 	continue
 
 		data = data.decode()
 		data = data.split(GS) # to prevent recving mutiple messgaes, the last element is always ""
@@ -253,7 +259,11 @@ def wait_for_promise():
 
 	condition_lock.acquire()
 	while len(promise_response_ballot) < 2:
-		condition_lock.wait()
+		if False == condition_lock.wait(timeout=TIMEOUT_TIME):
+			print("Promise took too long, abort", flush=True)
+			request_queue.queue.clear()
+			condition_lock.release()
+			return
 
 	max_ballot_index = np.argmax(promise_response_ballot)
 
@@ -478,7 +488,7 @@ if __name__ == "__main__":
 	ballot.pid = PROCESS_ID
 	ballot.depth = 0
 	backup_file = open(f'p{PROCESS_ID}_backup.txt', 'a+')
-	restore_from_file()
+	#restore_from_file()
 	sockets[PROCESS_ID] = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 	sockets[PROCESS_ID].setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 	sockets[PROCESS_ID].bind((SERVER_IP, 0))
