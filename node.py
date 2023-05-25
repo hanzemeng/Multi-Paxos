@@ -42,7 +42,7 @@ request_queue = Queue()
 forwarded_request_queue = Queue()
 
 def get_user_input():
-	global condition_lock, leader_id, request_queue, forward_lock, forwarded_request_queue
+	global condition_lock, leader_id, request_queue, forward_lock, forwarded_request_queue, backup_file
 	while True:
 		try:
 			user_input = input()
@@ -55,6 +55,7 @@ def get_user_input():
 				if None != sock:
 					sock.close()
 			sys.stdout.flush()
+			backup_file.close()
 			_exit(0)
 		elif "wait" == parameters[0]:
 			sleep(int(parameters[1]))
@@ -330,7 +331,7 @@ def on_receive_prepare(args, id):
 		print(f'Error sending to node {leader_id}', flush=True)
 
 def on_receive_promise(args, id):
-	global condition_lock, leader_id, ballot, promise_response_ballot, promise_response_block, sent_ballot
+	global condition_lock, ballot, promise_response_ballot, promise_response_block, sent_ballot
 
 	condition_lock.acquire()
 	received_ballot = Ballot.string_to_ballot(args[0])
@@ -344,7 +345,7 @@ def on_receive_promise(args, id):
 	condition_lock.release()
 
 def on_receive_accept(args, id):
-	global condition_lock, leader_id, ballot, accepted_ballot, accepted_block
+	global condition_lock, leader_id, ballot, accepted_ballot, accepted_block, backup_file
 
 	condition_lock.acquire()
 
@@ -357,6 +358,7 @@ def on_receive_accept(args, id):
 	leader_id = received_ballot.pid
 	accepted_ballot = received_ballot
 	accepted_block = args[1]
+	backup_file.write(f'T{RS}{accepted_block}{GS}')
 	msg = f'accepted{RS}{args[0]}{RS}{args[1]}{GS}'
 
 	condition_lock.release()
@@ -412,9 +414,8 @@ def on_receive_forward(args, id):
 		except:
 			print(f'Error sending to node {leader_id}', flush=True)
 
-
 def execute_operation(block_string):
-	global condition_lock, forum, blockchain
+	global condition_lock, forum, blockchain, backup_file
 
 	condition_lock.acquire()
 
@@ -429,11 +430,17 @@ def execute_operation(block_string):
 		return
 
 	blockchain.commit_block(block_string)
+	backup_file.write(f'D{RS}{block_string}{GS}')
+
+	if new_block.operation == 'POST':
+		print(f'NEW POST *{new_block.title}* from user *{new_block.username}*', flush=True)
+	elif new_block.operation == 'COMMENT':
+		print(f'NEW COMMENT on *{new_block.title}* from user *{new_block.username}*', flush=True)
 
 	condition_lock.release()
-		
+
 def forward_request():
-	global forward_lock, forwarded_request_queue
+	global forward_lock, forwarded_request_queue, leader_id
 
 	while True:
 		forward_lock.acquire()
@@ -454,12 +461,24 @@ def forward_request():
 
 		forward_lock.release()
 
+def restore_from_file():
+	global backup_file, blockchain, forum
+	backup_file.seek(0)
+	content = backup_file.read().split(GS)
+	for s in content:
+		args = s.split(RS)
+		if args[0] == 'D':
+			blockchain.commit_block(args[1])
+	if blockchain.length() > 0:
+		blockchain.build_forum(forum)
 
 if __name__ == "__main__":
 	PROCESS_ID = int(sys.argv[1])
 	ballot.seq_num = 0
 	ballot.pid = PROCESS_ID
 	ballot.depth = 0
+	backup_file = open(f'p{PROCESS_ID}_backup.txt', 'a+')
+	restore_from_file()
 	sockets[PROCESS_ID] = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 	sockets[PROCESS_ID].setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 	sockets[PROCESS_ID].bind((SERVER_IP, 0))
