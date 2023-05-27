@@ -75,7 +75,7 @@ def handle_msg(data, conn, addr):
 	elif "connect" == parameters[0]:
 		connect_lock.acquire()
 		respond_index = id_to_port.index(addr[1])
-		client_sockets[respond_index][0].sendall(bytes(f"connect{RS}{parameters[1]}{GS}", "utf-8"))
+		client_sockets[respond_index][0].sendall(bytes(f"connect{RS}{parameters[1]}{RS}{client_ports[int(parameters[1])-1]}{GS}", "utf-8"))
 		client_sockets[int(parameters[1])-1][0].sendall(bytes(f"connect{RS}{respond_index+1}{RS}{client_ports[respond_index]}{GS}", "utf-8"))
 		connect_lock.release()
 
