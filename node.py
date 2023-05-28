@@ -1,7 +1,6 @@
 import socket
 import threading
 import sys
-import random
 from os import _exit
 from time import sleep
 from queue import Queue
@@ -32,8 +31,6 @@ promise_response_ballot = []
 promise_response_block = []
 accept_response_ballot = []
 accept_response_block = []
-
-slots = []
 
 forum = Forum()
 blockchain = Blockchain()
@@ -431,7 +428,7 @@ def on_receive_forward(args, id):
 			print(f'Error sending to node {leader_id}', flush=True)
 
 def execute_operation(block_string):
-	global condition_lock, forum, blockchain, backup_file
+	global condition_lock, forum, blockchain, backup_file, accepted_ballot, accepted_block
 
 	condition_lock.acquire()
 
@@ -447,6 +444,8 @@ def execute_operation(block_string):
 
 	blockchain.commit_block(block_string)
 	backup_file.write(f'D{RS}{block_string}{GS}')
+	accepted_ballot = Ballot()
+	accepted_block = "none"
 
 	if new_block.operation == 'POST':
 		print(f'NEW POST *{new_block.title}* from user *{new_block.username}*', flush=True)
@@ -485,7 +484,6 @@ def forward_request():
 
 				break
 
-
 		forward_lock.release()
 
 def restore_from_file():
@@ -505,7 +503,6 @@ if __name__ == "__main__":
 	ballot.pid = PROCESS_ID
 	ballot.depth = 0
 	backup_file = open(f'p{PROCESS_ID}_backup.txt', 'a+')
-	#restore_from_file()
 	sockets[PROCESS_ID] = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 	sockets[PROCESS_ID].setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 	sockets[PROCESS_ID].bind((SERVER_IP, 0))
