@@ -32,6 +32,13 @@ class Block:
 	def block_to_string(block, delimiter=US):
 		return f"<{block.pervious_block_hash}{delimiter}<{block.operation}{delimiter}{block.username}{delimiter}{block.title}{delimiter}{block.content}>{delimiter}{block.nonce}>"
 
+	def same_block_op(bs1: str, bs2: str):
+		args1 = bs1.split(US)
+		args2 = bs2.split(US)
+		if (args1[1] == args2[1]) and (args1[2] == args2[2]) and (args1[3] == args2[3]) and (args1[4] == args2[4]):
+			return True
+		return False
+
 class Blockchain:
 	def __init__(self):
 		self.tail = None

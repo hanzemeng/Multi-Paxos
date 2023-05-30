@@ -256,11 +256,9 @@ def wait_for_promise():
 			condition_lock.release()
 			return
 
-	max_ballot_index = np.argmax(promise_response_ballot)
-
-	if np.max(promise_response_ballot) != Ballot():
+	if all(b != 'none' for b in promise_response_block):
 		max_ballot_index = np.argmax(promise_response_ballot)
-		request_queue.put(promise_response_block[max_ballot_index])
+		request_queue.queue.insert(0, promise_response_block[max_ballot_index])
 		condition_lock.notify_all()
 
 	threading.Thread(target=become_leader).start()
@@ -274,7 +272,9 @@ def become_leader():
 		condition_lock.acquire()
 		while request_queue.empty():
 			condition_lock.wait()
-		new_block = request_queue.get()
+		
+		request = Block.string_to_block(request_queue.get())
+		new_block = Block.block_to_string(blockchain.add_block(request.operation, request.username, request.title, request.content))
 
 		ballot.pid = PROCESS_ID
 		ballot.depth = blockchain.length()
@@ -401,7 +401,7 @@ def on_receive_decide(args, id):
 	global forward_lock, forwarded_request_queue
 
 	forward_lock.acquire()
-	if False == forwarded_request_queue.empty() and args[0] == forwarded_request_queue.queue[0]:
+	if False == forwarded_request_queue.empty() and Block.same_block_op(args[0], forwarded_request_queue.queue[0]):
 		forward_lock.notify_all()
 		forwarded_request_queue.get()
 	forward_lock.release()
@@ -445,7 +445,7 @@ def execute_operation(block_string):
 	blockchain.commit_block(block_string)
 	backup_file.write(f'D{RS}{block_string}{GS}')
 	accepted_ballot = Ballot()
-	accepted_block = "none"
+	accepted_block = 'none'
 
 	if new_block.operation == 'POST':
 		print(f'NEW POST *{new_block.title}* from user *{new_block.username}*', flush=True)
@@ -487,12 +487,16 @@ def forward_request():
 		forward_lock.release()
 
 def restore_from_file():
-	global backup_file, blockchain, forum
+	global backup_file, blockchain, forum, accepted_block
 	backup_file.seek(0)
 	content = backup_file.read().split(GS)
 	for s in content:
 		args = s.split(RS)
-		if args[0] == 'D':
+		if args[0] == 'T':
+			accepted_block = args[1]
+		elif args[0] == 'D':
+			if Block.same_block_op(accepted_block, args[1]):
+				accepted_block = 'none'
 			blockchain.commit_block(args[1])
 	if blockchain.length() > 0:
 		blockchain.build_forum(forum)
