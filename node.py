@@ -53,7 +53,7 @@ def get_user_input():
 			sys.stdout.flush()
 			backup_file.close()
 			_exit(0)
-		elif "wait" == parameters[0]:
+		elif "wait" == parameters[0] and len(parameters) == 2:
 			sleep(int(parameters[1]))
 		elif "hi" == parameters[0]: # say hi to all clients, for debugging
 			for i in range(1, 6):
@@ -62,11 +62,11 @@ def get_user_input():
 						sockets[i].sendall(bytes(f"Hello from P{PROCESS_ID}{GS}", "utf-8"))
 					except:
 						print(f"can't send hi to {i}\n")
-		elif "fail" == parameters[0]:
+		elif "fail" == parameters[0] and len(parameters) == 2:
 			condition_lock.acquire()
 			sockets[0].sendall(bytes(f"disconnect {parameters[1]}\n", "utf-8"))
 			condition_lock.release()
-		elif "fix" == parameters[0]:
+		elif "fix" == parameters[0] and len(parameters) == 2:
 			condition_lock.acquire()
 			sockets[0].sendall(bytes(f"connect {parameters[1]}\n", "utf-8"))
 			condition_lock.release()
@@ -87,7 +87,7 @@ def get_user_input():
 			
 			condition_lock.acquire()
 
-			new_block = blockchain.add_block(operation, username, title, content)
+			new_block = blockchain.add_block(operation, username, title, content, PROCESS_ID)
 			new_block_string = Block.block_to_string(new_block)
 
 			if leader_id == -1:
@@ -122,7 +122,7 @@ def get_user_input():
 			
 			condition_lock.acquire()
 
-			new_block = blockchain.add_block(operation, username, title, content)
+			new_block = blockchain.add_block(operation, username, title, content, PROCESS_ID)
 			new_block_string = Block.block_to_string(new_block)
 
 			if leader_id == -1:
@@ -147,7 +147,7 @@ def get_user_input():
 			forum.print_all()
 		elif 'view' == parameters[0] and len(parameters) == 2:
 			forum.view_user(parameters[1])
-		elif 'read' == parameters[0]:
+		elif 'read' == parameters[0] and len(parameters) > 1:
 			title = ' '.join(parameters[1:])
 			forum.read_title(title)
 		else:
@@ -157,7 +157,13 @@ def handle_message_from(id, data): #id is the id that current process receives f
 	global condition_lock, leader_id, request_queue
 
 	print(f"{id}, {data}")
-	parameters = data.split(RS)
+	parameters = []
+	if data[0:7] != 'restore':
+		parameters = data.split(RS)
+	else: # restore message contains RS inbetween
+		i1 = data.find(RS)
+		i2 = data.find(RS, i1 + 1)
+		parameters = [data[0:i1], data[i1 + 1:i2], data[i2 + 1:]]
 	# print(parameters)
 
 	sleep(DELAY_TIME)
@@ -170,30 +176,32 @@ def handle_message_from(id, data): #id is the id that current process receives f
 			sockets[int(parameters[1])].connect((SERVER_IP, int(parameters[2])))
 			sockets[int(parameters[1])].sendall(bytes(f"init {PROCESS_ID}", "utf-8")) # don't append 0x04 when initializing
 			threading.Thread(target=listen_message_from, args=[int(parameters[1])]).start() # listen to message from the target client
+			try:
+				sockets[int(parameters[1])].sendall(bytes(f'{backup_file_msg()}', 'utf-8')) # send my blockchain to the client newly connecting
+			except:
+				pass
 		except:
 			print(f'Error connecting to node {int(parameters[1])}', flush=True)
 	elif "disconnect" == parameters[0]:
 		sockets[int(parameters[1])].close()
 	elif 'prepare' == parameters[0]:
-		on_receive_prepare(parameters[1:], id)
+		on_receive_prepare(parameters[1:])
 	elif 'promise' == parameters[0]:
-		on_receive_promise(parameters[1:], id)
+		on_receive_promise(parameters[1:])
 	elif 'accept' == parameters[0]:
-		on_receive_accept(parameters[1:], id)
+		on_receive_accept(parameters[1:])
 	elif 'accepted' == parameters[0]:
-		on_receive_accepted(parameters[1:], id)
+		on_receive_accepted(parameters[1:])
 	elif 'decide' == parameters[0]:
-		on_receive_decide(parameters[1:], id)
+		on_receive_decide(parameters[1:])
 	elif 'forward' == parameters[0]:
-		on_receive_forward(parameters[1:], id)
+		on_receive_forward(parameters[1:])
+	elif 'restore' == parameters[0]:
+		on_receive_restore(parameters[1:])
 	else:
 		print('Invalid message received from another node!', flush=True)
 
 def listen_message_from(id):
-	global condition_lock
-
-	condition_lock.acquire()
-	condition_lock.release()
 	while True:
 		try:
 			data = sockets[id].recv(4096)
@@ -204,11 +212,14 @@ def listen_message_from(id):
 			break
 
 		data = data.decode()
-		data = data.split(GS) # to prevent recving mutiple messgaes, the last element is always ""
-		for line in data:
-			if "" == line:
-				continue
-			threading.Thread(target=handle_message_from, args=[id, line]).start()
+		if data[0:7] != 'restore':
+			data = data.split(GS)
+			for line in data:
+				if "" == line:
+					continue
+				threading.Thread(target=handle_message_from, args=[id, line]).start()
+		else: # restore message contains GS inbetween
+			threading.Thread(target=handle_message_from, args=[id, data]).start()
 
 def accept_connection():
 	while True:
@@ -218,6 +229,10 @@ def accept_connection():
 			client_id = client_id.decode()
 			client_id = client_id.split()
 			sockets[int(client_id[1])] = conn
+			try:
+				sockets[int(client_id[1])].sendall(bytes(f'{backup_file_msg()}', 'utf-8')) # send my blockchain to the client newly connecting
+			except:
+				pass
 			threading.Thread(target=listen_message_from, args=[int(client_id[1])]).start() # listen to message from the target client
 		except:
 			break
@@ -246,13 +261,15 @@ def send_prepare():
 				print(f'Error sending to node {i}', flush=True)
 
 def wait_for_promise():
-	global condition_lock, promise_response_ballot, promise_response_block, request_queue
+	global condition_lock, promise_response_ballot, promise_response_block, request_queue, leader_id
 
 	condition_lock.acquire()
 	while len(promise_response_ballot) < 2:
 		if False == condition_lock.wait(timeout=TIMEOUT_TIME):
-			print("Promise took too long, abort", flush=True)
-			request_queue.queue.clear()
+			print("Promise took too long, resending prepare", flush=True)
+			condition_lock.notify_all()
+			leader_id = PROCESS_ID
+			threading.Thread(target=send_prepare).start()
 			condition_lock.release()
 			return
 
@@ -266,15 +283,15 @@ def wait_for_promise():
 	condition_lock.release()
 
 def become_leader():
-	global condition_lock, ballot, accept_response_ballot, accept_response_block, request_queue, blockchain, sent_ballot
+	global condition_lock, ballot, accept_response_ballot, accept_response_block, request_queue, blockchain, sent_ballot, leader_id
 
 	while True:
 		condition_lock.acquire()
 		while request_queue.empty():
 			condition_lock.wait()
 		
-		request = Block.string_to_block(request_queue.get())
-		new_block = Block.block_to_string(blockchain.add_block(request.operation, request.username, request.title, request.content))
+		request = Block.string_to_block(request_queue.queue[0])
+		new_block = Block.block_to_string(blockchain.add_block(request.operation, request.username, request.title, request.content, request.proposer))
 
 		ballot.pid = PROCESS_ID
 		ballot.depth = blockchain.length()
@@ -299,11 +316,19 @@ def become_leader():
 				is_accepted = False
 				print("Accepted took too long, abort", flush=True)
 				break
+		
+		if False == is_accepted:
+			if request.proposer == PROCESS_ID:
+				print("Restarting leader election", flush=True)
+				condition_lock.notify_all()
+				leader_id = PROCESS_ID
+				threading.Thread(target=send_prepare).start()
+				condition_lock.release()
+			return
+
 		condition_lock.release()
 
-		if False == is_accepted:
-			continue
-
+		request_queue.get()
 		execute_operation(new_block)
 		msg = f'decide{RS}{new_block}{GS}'
 		for i in range(1, 6):
@@ -313,7 +338,7 @@ def become_leader():
 				except:
 					print(f'Error sending to node {i}', flush=True)
 
-def on_receive_prepare(args, id):
+def on_receive_prepare(args):
 	global condition_lock, leader_id, ballot, blockchain
 
 	condition_lock.acquire()
@@ -339,7 +364,7 @@ def on_receive_prepare(args, id):
 	except:
 		print(f'Error sending to node {leader_id}', flush=True)
 
-def on_receive_promise(args, id):
+def on_receive_promise(args):
 	global condition_lock, ballot, promise_response_ballot, promise_response_block, sent_ballot
 
 	condition_lock.acquire()
@@ -353,7 +378,7 @@ def on_receive_promise(args, id):
 	condition_lock.notify_all()
 	condition_lock.release()
 
-def on_receive_accept(args, id):
+def on_receive_accept(args):
 	global condition_lock, leader_id, ballot, accepted_ballot, accepted_block, blockchain, backup_file
 
 	condition_lock.acquire()
@@ -381,7 +406,7 @@ def on_receive_accept(args, id):
 	except:
 		print(f'Error sending to node {leader_id}', flush=True)
 
-def on_receive_accepted(args, id):
+def on_receive_accepted(args):
 	global condition_lock, ballot, accept_response_ballot, accept_response_block, sent_ballot
 
 	condition_lock.acquire()
@@ -397,7 +422,7 @@ def on_receive_accepted(args, id):
 
 	condition_lock.release()
 
-def on_receive_decide(args, id):
+def on_receive_decide(args):
 	global forward_lock, forwarded_request_queue
 
 	forward_lock.acquire()
@@ -408,7 +433,7 @@ def on_receive_decide(args, id):
 
 	execute_operation(args[0])
 
-def on_receive_forward(args, id):
+def on_receive_forward(args):
 	global condition_lock, leader_id, request_queue
 	if PROCESS_ID == leader_id or -1 == leader_id:
 		condition_lock.acquire()
@@ -426,6 +451,13 @@ def on_receive_forward(args, id):
 			sockets[leader_id].sendall(bytes(msg, 'utf-8'))
 		except:
 			print(f'Error sending to node {leader_id}', flush=True)
+
+def on_receive_restore(args):
+	global blockchain
+	if blockchain.length() >= int(args[0]):
+		return
+	
+	restore_from_file_string(args[1])
 
 def execute_operation(block_string):
 	global condition_lock, forum, blockchain, backup_file, accepted_ballot, accepted_block
@@ -486,10 +518,27 @@ def forward_request():
 
 		forward_lock.release()
 
-def restore_from_file():
+def backup_file_msg():
+	global backup_file
+	backup_file.seek(0)
+	data = backup_file.read()
+	content = data.split(GS)
+	length = 0
+	for s in content:
+		args = s.split(RS)
+		if args[0] == 'D':
+			length += 1
+	return f'restore{RS}{length}{RS}{data}'
+
+def restore_from_file_string(data: str):
 	global backup_file, blockchain, forum, accepted_block
 	backup_file.seek(0)
-	content = backup_file.read().split(GS)
+	backup_file.truncate()
+	backup_file.write(data) # overwrite whole file
+
+	blockchain = Blockchain()
+	forum = Forum()
+	content = data.split(GS)
 	for s in content:
 		args = s.split(RS)
 		if args[0] == 'T':

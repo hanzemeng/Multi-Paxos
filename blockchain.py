@@ -10,10 +10,11 @@ class Block:
 		self.username = "unknown"
 		self.title = "unknown"
 		self.content = "unknown"
+		self.proposer = 0
 		self.nonce = 0
 
 	def to_bytes(self):
-		temp_string = self.pervious_block_hash + self.operation + self.username + self.title + self.content + str(self.nonce)
+		temp_string = self.pervious_block_hash + self.operation + self.username + self.title + self.content + str(self.proposer) + str(self.nonce)
 		return bytes(temp_string, 'utf-8')
 
 	# below are static functions
@@ -26,13 +27,16 @@ class Block:
 		new_block.username = parameters[2]
 		new_block.title = parameters[3]
 		new_block.content = parameters[4][:-1]
-		new_block.nonce = parameters[5][:-1]
+		new_block.proposer = int(parameters[5])
+		new_block.nonce = int(parameters[6][:-1])
 		return new_block
 
 	def block_to_string(block, delimiter=US):
-		return f"<{block.pervious_block_hash}{delimiter}<{block.operation}{delimiter}{block.username}{delimiter}{block.title}{delimiter}{block.content}>{delimiter}{block.nonce}>"
+		return f"<{block.pervious_block_hash}{delimiter}<{block.operation}{delimiter}{block.username}{delimiter}{block.title}{delimiter}{block.content}>{delimiter}{block.proposer}{delimiter}{block.nonce}>"
 
 	def same_block_op(bs1: str, bs2: str):
+		if (bs1 == 'none') or (bs2 == 'none'):
+			return False
 		args1 = bs1.split(US)
 		args2 = bs2.split(US)
 		if (args1[1] == args2[1]) and (args1[2] == args2[2]) and (args1[3] == args2[3]) and (args1[4] == args2[4]):
@@ -48,7 +52,7 @@ class Blockchain:
 		new_block.pervious_block = self.tail
 		self.tail = new_block
 
-	def add_block(self, operation, username, title, content):
+	def add_block(self, operation, username, title, content, id):
 		block = Block()
 
 		if None == self.tail:
@@ -59,6 +63,7 @@ class Blockchain:
 		block.username = username
 		block.title = title
 		block.content = content
+		block.proposer = id
 		block.nonce = 0
 		while ('0' != hashlib.sha256(block.to_bytes()).hexdigest()[0]) and ('1' != hashlib.sha256(block.to_bytes()).hexdigest()[0]):
 			block.nonce += 1
