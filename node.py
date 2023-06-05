@@ -325,6 +325,8 @@ def become_leader():
 				threading.Thread(target=send_prepare).start()
 				condition_lock.release()
 				return
+			request_queue.get()
+			condition_lock.release()
 			continue
 
 		condition_lock.release()
