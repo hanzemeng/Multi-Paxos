@@ -90,13 +90,18 @@ class Blockchain:
 		return len(stack)
 
 	def build_forum(self, f: Forum):
+		ops = []
 		current = self.tail
 		while None != current:
-			args = Block.block_to_string(current).split(US)[1:5]
+			ops.append(Block.block_to_string(current))
+			current = current.pervious_block
+		
+		ops.reverse()
+		for s in ops:
+			args = s.split(US)[1:5]
 			if args[0][1:] == 'POST':
 				f.post_blog(Blog(args[1], args[2], args[3][:-1]))
 			elif args[0][1:] == 'COMMENT':
 				f.post_comment(Comment(args[1], args[2], args[3][:-1]))
 			else:
 				continue
-			current = current.pervious_block
