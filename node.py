@@ -456,11 +456,14 @@ def on_receive_forward(args):
 			print(f'Error sending to node {leader_id}', flush=True)
 
 def on_receive_restore(args):
-	global blockchain
+	global blockchain, condition_lock
+
+	condition_lock.acquire()
 	if blockchain.length() >= int(args[0]):
 		return
 	
 	restore_from_file_string(args[1])
+	condition_lock.release()
 
 def execute_operation(block_string):
 	global condition_lock, forum, blockchain, backup_file, accepted_ballot, accepted_block
