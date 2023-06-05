@@ -324,6 +324,7 @@ def become_leader():
 				leader_id = PROCESS_ID
 				threading.Thread(target=send_prepare).start()
 				condition_lock.release()
+				return
 			continue
 
 		condition_lock.release()
