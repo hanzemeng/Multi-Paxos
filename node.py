@@ -458,10 +458,10 @@ def on_receive_forward(args):
 def on_receive_restore(args):
 	global blockchain, condition_lock
 
-	condition_lock.acquire()
 	if blockchain.length() >= int(args[0]):
 		return
-	
+
+	condition_lock.acquire()	
 	restore_from_file_string(args[1])
 	condition_lock.release()
 
