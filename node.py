@@ -564,6 +564,9 @@ if __name__ == "__main__":
 	ballot.pid = PROCESS_ID
 	ballot.depth = 0
 	backup_file = open(f'p{PROCESS_ID}_backup.txt', 'a+')
+	backup_file.seek(0)
+	data = backup_file.read()
+	restore_from_file_string(data)
 	sockets[PROCESS_ID] = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 	sockets[PROCESS_ID].setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 	sockets[PROCESS_ID].bind((SERVER_IP, 0))
