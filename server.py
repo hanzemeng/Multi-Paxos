@@ -43,7 +43,7 @@ def respond(conn, addr):
 		threading.Thread(target=handle_msg, args=(data, conn, addr)).start()
 
 def handle_msg(data, conn, addr):
-	global connect_lock 
+	global connect_lock, client_ports, id_to_port, client_sockets
 	data = data.decode()
 	parameters = data.split()
 

@@ -176,6 +176,8 @@ def handle_message_from(id, data): #id is the id that current process receives f
 			sockets[int(parameters[1])].connect((SERVER_IP, int(parameters[2])))
 			sockets[int(parameters[1])].sendall(bytes(f"init {PROCESS_ID}", "utf-8")) # don't append 0x04 when initializing
 			threading.Thread(target=listen_message_from, args=[int(parameters[1])]).start() # listen to message from the target client
+
+			sleep(DELAY_TIME)
 			try:
 				sockets[int(parameters[1])].sendall(bytes(f'{backup_file_msg()}', 'utf-8')) # send my blockchain to the client newly connecting
 			except:
@@ -235,7 +237,8 @@ def accept_connection():
 				pass
 			threading.Thread(target=listen_message_from, args=[int(client_id[1])]).start() # listen to message from the target client
 		except:
-			break
+			print("can't accept", flush=True)
+			continue
 
 def send_prepare():
 	global condition_lock, ballot, promise_response_ballot, promise_response_block, blockchain, sent_ballot
@@ -570,7 +573,7 @@ if __name__ == "__main__":
 	sockets[PROCESS_ID] = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 	sockets[PROCESS_ID].setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 	sockets[PROCESS_ID].bind((SERVER_IP, 0))
-	sockets[PROCESS_ID].listen()
+	sockets[PROCESS_ID].listen(5)
 	threading.Thread(target=accept_connection).start()
 
 	sleep(DELAY_TIME)
