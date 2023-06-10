@@ -12,8 +12,8 @@ import numpy as np
 condition_lock = threading.Condition()
 forward_lock = threading.Condition()
 
-DELAY_TIME = 0.5
-TIMEOUT_TIME = 5
+DELAY_TIME = 3
+TIMEOUT_TIME = 15
 
 PROCESS_ID = -1
 PROCESS_PORT = -1
@@ -143,6 +143,13 @@ def get_user_input():
 
 		elif "b" == parameters[0]:
 			blockchain.print()
+		elif "q" == parameters[0]:
+			temp_queue = Queue()
+			while False == request_queue.empty():
+				temp = request_queue.get();
+				print(temp, flush=True)
+				temp_queue.put(temp)
+			request_queue = temp_queue
 		elif 'blog' == parameters[0]:
 			forum.print_all()
 		elif 'view' == parameters[0] and len(parameters) == 2:
@@ -441,22 +448,21 @@ def on_receive_decide(args):
 
 def on_receive_forward(args):
 	global condition_lock, leader_id, request_queue
+	
+	condition_lock.acquire()
 	if PROCESS_ID == leader_id or -1 == leader_id:
-		condition_lock.acquire()
 		request_queue.put(args[0])
 		condition_lock.notify_all()
-
 		if -1 == leader_id:
 			leader_id = PROCESS_ID
 			threading.Thread(target=send_prepare).start()
-
-		condition_lock.release()
 	else:
 		msg = f'forward{RS}{args[0]}{RS}{GS}'
 		try:
 			sockets[leader_id].sendall(bytes(msg, 'utf-8'))
 		except:
 			print(f'Error sending to node {leader_id}', flush=True)
+	condition_lock.release()
 
 def on_receive_restore(args):
 	global blockchain, condition_lock
