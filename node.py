@@ -163,6 +163,8 @@ def get_user_input():
 def handle_message_from(id, data): #id is the id that current process receives from
 	global condition_lock, leader_id, request_queue
 
+	sleep(DELAY_TIME)
+
 	print(f"{id}, {data}")
 	parameters = []
 	if data[0:7] != 'restore':
@@ -171,9 +173,7 @@ def handle_message_from(id, data): #id is the id that current process receives f
 		i1 = data.find(RS)
 		i2 = data.find(RS, i1 + 1)
 		parameters = [data[0:i1], data[i1 + 1:i2], data[i2 + 1:]]
-	# print(parameters)
-
-	sleep(DELAY_TIME)
+	# print(parameters)	
 
 	if "connect" == parameters[0]:
 		if int(parameters[1]) >= PROCESS_ID: # only connect to client with smaller id
@@ -260,6 +260,7 @@ def send_prepare():
 	promise_response_block = []
 	threading.Thread(target=wait_for_promise).start()
 	msg = f'prepare{RS}{Ballot.ballot_to_string(ballot)}{GS}'
+	print(f"Sending {msg}", flush=True)
 
 	condition_lock.release()
 
@@ -309,6 +310,7 @@ def become_leader():
 		accept_response_ballot = []
 		accept_response_block = []
 		msg = f'accept{RS}{Ballot.ballot_to_string(ballot)}{RS}{new_block}{GS}'
+		print(f"Sending {msg}", flush=True)
 
 		condition_lock.release()
 
@@ -344,6 +346,7 @@ def become_leader():
 		request_queue.get()
 		execute_operation(new_block)
 		msg = f'decide{RS}{new_block}{GS}'
+		print(f"Sending {msg}", flush=True)
 		for i in range(1, 6):
 			if i != PROCESS_ID:
 				try:
@@ -369,6 +372,7 @@ def on_receive_prepare(args):
 	ballot = received_ballot
 	leader_id = received_ballot.pid
 	msg = f'promise{RS}{Ballot.ballot_to_string(ballot)}{RS}{Ballot.ballot_to_string(accepted_ballot)}{RS}{accepted_block}{GS}'
+	print(f"Sending {msg}", flush=True)
 
 	condition_lock.release()
 
@@ -411,6 +415,7 @@ def on_receive_accept(args):
 	accepted_block = args[1]
 	backup_file.write(f'T{RS}{accepted_block}{GS}')
 	msg = f'accepted{RS}{args[0]}{RS}{args[1]}{GS}'
+	print(f"Sending {msg}", flush=True)
 
 	condition_lock.release()
 
